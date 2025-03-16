@@ -1,0 +1,18 @@
+[package]
+name = "indexed_deflate"
+version = "0.1.0"
+edition = "2021"
+authors = ["Philip Taylor <philip@zaynar.co.uk>"]
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+byteorder = "1.5.0"
+gzip-header = "1.0.0"
+miniz_oxide = { version = "0.8.5" }
+postcard = { version = "1.1.1", features = ["use-std"] }
+serde = "1.0.219"
+thiserror = "2.0.12"
+
+[dev-dependencies]
+clap = { version = "4.5.32", features = ["derive"] }
+tar = "0.4.44"
