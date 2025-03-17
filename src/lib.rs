@@ -28,7 +28,7 @@
 //! ## Building the index
 //!
 //! ```
-//! fn build_index() -> std:io::Result<()> {
+//! fn build_index() -> Result<()> {
 //!     let mut gz = File::open("example.tar.gz")?;
 //!     let mut index = File::create("example.tar.gz.index")?;
 //!
@@ -60,7 +60,7 @@
 //! ## Using the index
 //!
 //! ```
-//! fn use_index() -> std::io::Result<()> {
+//! fn use_index() -> Result<()> {
 //!     let mut gz = File::open("example.tar.gz")?;
 //!     let mut index = File::open("example.tar.gz.index")?;
 //!
