@@ -144,7 +144,7 @@ const HEADER_MAGIC: [u8; 4] = *b"GzIx";
 
 /// Indicates the user started writing the index file but didn't call `finish()`,
 /// so it is corrupted
-const VERSION_UNFINISHED: u32 = 0xffffffff;
+const VERSION_UNFINISHED: u32 = 0xffff_ffff;
 
 const VERSION_LATEST: u32 = 2;
 
@@ -243,7 +243,7 @@ struct AccessPoint {
 
     /// Offset into the index file's `windows` data
     window_offset: u64,
-    window_compressed_sized: u16,
+    window_compressed_size: u16,
 
     /// Number of bits from the `in_pos` byte, that are part of the new deflate block
     num_bits: u8,
@@ -262,10 +262,10 @@ struct GzCommon<GzStream> {
     input_offset: usize,
     input_size: usize,
 
-    /// Position in file that corresponds to input[input_offset]
+    /// Position in file that corresponds to `input[input_offset]`
     input_pos: u64,
 
-    /// Circular buffer for output. Size is OUTPUT_BUF_SIZE
+    /// Circular buffer for output. Size is `OUTPUT_BUF_SIZE`
     output: Vec<u8>,
     /// Number of bytes written to output buffer (not wrapped to buffer size)
     output_pos: u64,
@@ -309,7 +309,7 @@ where
             buf[i as usize] = self.output[((self.output_ret + i) % OUTPUT_BUF_SIZE) as usize];
         }
         self.output_ret += copied;
-        return copied as usize;
+        copied as usize
     }
 
     fn make_progress(&mut self, flags: u32) -> std::io::Result<TINFLStatus> {
@@ -445,7 +445,7 @@ where
                 self.make_progress()?;
             }
 
-            let skipped = (self.common.output_pos - self.common.output_ret).min(remaining as u64);
+            let skipped = (self.common.output_pos - self.common.output_ret).min(remaining);
             self.common.output_ret += skipped;
             remaining -= skipped;
 
@@ -457,7 +457,7 @@ where
             }
         }
 
-        return Ok(());
+        Ok(())
     }
 }
 
@@ -470,7 +470,7 @@ where
             self.make_progress()?;
         }
 
-        return Ok(self.common.flush_output(buf));
+        Ok(self.common.flush_output(buf))
     }
 }
 
@@ -534,14 +534,13 @@ where
             self.common.done = false;
 
             // If the block was not byte-aligned, extract the bits from the first byte
-            let bit_buf;
-            if point.num_bits != 0 {
+            let bit_buf = if point.num_bits != 0 {
                 let mut buf = [0];
                 self.common.gz_stream.read_exact(&mut buf)?;
-                bit_buf = buf[0] >> (8 - point.num_bits);
+                buf[0] >> (8 - point.num_bits)
             } else {
-                bit_buf = 0;
-            }
+                0
+            };
 
             let decomp_state = BlockBoundaryState {
                 num_bits: point.num_bits,
@@ -551,9 +550,9 @@ where
             *self.common.decomp = DecompressorOxide::from_block_boundary_state(&decomp_state);
 
             // Read the compressed window from the index
-            let mut window = vec![0; point.window_compressed_sized as usize];
+            let mut window = vec![0; point.window_compressed_size as usize];
             self.index_stream.seek(SeekFrom::Start(
-                self.header_pos + Header::size() + point.window_offset as u64,
+                self.header_pos + Header::size() + point.window_offset,
             ))?;
             self.index_stream.read_exact(&mut window)?;
 
@@ -665,9 +664,9 @@ where
         let window_compressed =
             miniz_oxide::deflate::compress_to_vec(&window, CompressionLevel::DefaultLevel as u8);
 
-        // Deflate should never expand the 32KB input by 2x.
-        // This limit lets us store it as u16
-        assert!(window_compressed.len() < 65536);
+        // Deflate should never expand the 32KB input by 2x, so it's safe to store it as u16
+        let window_compressed_size =
+            u16::try_from(window_compressed.len()).expect("compressed window too large");
 
         let num_bits = self
             .common
@@ -684,12 +683,12 @@ where
             out_pos: self.common.output_pos,
             in_pos: self.common.input_pos - in_pos_offset,
             window_offset: self.windows_size,
-            window_compressed_sized: window_compressed.len() as u16,
+            window_compressed_size,
             num_bits,
         });
         self.index_stream.write_all(&window_compressed)?;
 
-        self.windows_size += window_compressed.len() as u64;
+        self.windows_size += window_compressed_size as u64;
 
         Ok(())
     }
@@ -709,7 +708,7 @@ where
                     self.create_access_point()?;
                 }
 
-                return Ok(());
+                Ok(())
             }
             _ => Err(std::io::Error::other("decompression failed")),
         }
@@ -726,6 +725,6 @@ where
             self.make_progress()?;
         }
 
-        return Ok(self.common.flush_output(buf));
+        Ok(self.common.flush_output(buf))
     }
 }
