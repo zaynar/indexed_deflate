@@ -108,7 +108,7 @@ pub enum Error {
     #[error("index file was not closed with `finish()`")]
     IndexUnfinished,
     #[error("index file version is incompatible")]
-    IndexIncompatible,
+    IndexIncompatibleVersion,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -146,12 +146,12 @@ const HEADER_MAGIC: [u8; 4] = *b"GzIx";
 /// so it is corrupted
 const VERSION_UNFINISHED: u32 = 0xffffffff;
 
-const VERSION_LATEST: u32 = 1;
+const VERSION_LATEST: u32 = 2;
 
 struct Header {
     magic: [u8; 4], // HEADER_MAGIC
     version: u32,   // VERSION_LATEST
-    windows_size: u32,
+    windows_size: u64,
     points_size: u32,
 }
 
@@ -176,7 +176,7 @@ struct Header {
 
 /// Index file header
 impl Header {
-    fn new(windows_size: u32, points_size: u32) -> Self {
+    fn new(windows_size: u64, points_size: u32) -> Self {
         Self {
             magic: HEADER_MAGIC,
             version: VERSION_LATEST,
@@ -185,12 +185,21 @@ impl Header {
         }
     }
 
+    fn unfinished() -> Self {
+        Self {
+            magic: HEADER_MAGIC,
+            version: VERSION_UNFINISHED,
+            windows_size: 0,
+            points_size: 0,
+        }
+    }
+
     fn read<R: Read>(mut r: R) -> std::io::Result<Self> {
         let mut magic = [0; 4];
         r.read_exact(&mut magic)?;
 
         let version = r.read_u32::<LittleEndian>()?;
-        let windows_size = r.read_u32::<LittleEndian>()?;
+        let windows_size = r.read_u64::<LittleEndian>()?;
         let points_size = r.read_u32::<LittleEndian>()?;
 
         Ok(Header {
@@ -204,13 +213,13 @@ impl Header {
     fn write<W: Write>(&self, mut w: W) -> std::io::Result<()> {
         w.write_all(&self.magic)?;
         w.write_u32::<LittleEndian>(self.version)?;
-        w.write_u32::<LittleEndian>(self.windows_size)?;
+        w.write_u64::<LittleEndian>(self.windows_size)?;
         w.write_u32::<LittleEndian>(self.points_size)?;
         Ok(())
     }
 
     fn size() -> u64 {
-        16
+        20
     }
 
     fn validate(&self) -> Result<()> {
@@ -221,7 +230,7 @@ impl Header {
             return Err(Error::IndexUnfinished);
         }
         if self.version != VERSION_LATEST {
-            return Err(Error::IndexIncompatible);
+            return Err(Error::IndexIncompatibleVersion);
         }
         Ok(())
     }
@@ -233,7 +242,7 @@ struct AccessPoint {
     in_pos: u64,
 
     /// Offset into the index file's `windows` data
-    window_offset: u32,
+    window_offset: u64,
     window_compressed_sized: u16,
 
     /// Number of bits from the `in_pos` byte, that are part of the new deflate block
@@ -367,7 +376,7 @@ where
         header.validate()?;
 
         index_stream.seek(SeekFrom::Start(
-            header_pos + Header::size() + header.windows_size as u64,
+            header_pos + Header::size() + header.windows_size,
         ))?;
         let mut points = vec![0; header.points_size as usize];
         index_stream.read_exact(&mut points)?;
@@ -575,7 +584,7 @@ pub struct GzIndexBuilder<GzStream, IndexStream> {
 
     header_pos: u64,
     /// Size of window data in index file
-    windows_size: u32,
+    windows_size: u64,
     access_points: Vec<AccessPoint>,
 
     last_block_start: u64,
@@ -594,15 +603,7 @@ where
     ) -> Result<Self> {
         let header_pos = index_stream.stream_position()?;
 
-        let header = [
-            HEADER_MAGIC,
-            VERSION_UNFINISHED.to_le_bytes(),
-            0_u32.to_le_bytes(),
-            0_u32.to_le_bytes(),
-        ]
-        .concat();
-
-        index_stream.write_all(&header)?;
+        Header::unfinished().write(&mut index_stream)?;
 
         let gz_header = gzip_header::read_gz_header(&mut gz_stream)?;
 
@@ -688,12 +689,7 @@ where
         });
         self.index_stream.write_all(&window_compressed)?;
 
-        self.windows_size = self
-            .windows_size
-            .checked_add(window_compressed.len() as u32)
-            .ok_or_else(|| {
-                std::io::Error::other("index exceeded 4GB max size of compressed window data")
-            })?;
+        self.windows_size += window_compressed.len() as u64;
 
         Ok(())
     }
