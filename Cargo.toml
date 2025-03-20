@@ -7,13 +7,18 @@ license = "MIT OR Apache-2.0"
 readme = "README.md"
 
 [dependencies]
-byteorder = "1.5.0"
 gzip-header = "1.0.0"
 miniz_oxide = { version = "0.8.5" }
-postcard = { version = "1.1.1", features = ["use-std"] }
-serde = "1.0.219"
 thiserror = "2.0.12"
 
 [dev-dependencies]
 clap = { version = "4.5.32", features = ["derive"] }
+flate2 = "1.1.0"
+paste = "1.0.15"
+postcard = { version = "1.1.1", features = ["use-std"] }
+rand = "0.9.0"
+rand_pcg = "0.9.0"
+serde = "1.0.219"
+sha2 = "0.10.8"
 tar = "0.4.44"
+tempfile = "3.19.1"
